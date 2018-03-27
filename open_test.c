@@ -4,10 +4,15 @@
 #include <stdio.h>
 #include <unistd.h>
 
+/*
+ * model test program which echos a file to stdout with unix read/write API
+ */
+
+
 int
 main(int argc, const char* argv[]){
 	if(argc < 2){
-		printf("ERROR: No file specified");
+		printf("ERROR: No file specified\n");
 		return -1; 
 	}
 	const char *pathname = argv[1]; 
@@ -15,7 +20,7 @@ main(int argc, const char* argv[]){
 	// OPEN FILE
 	int fd = open(pathname, O_RDWR);
 	if(fd < 0){
-		printf("ERROR: Opening file %s", pathname);
+		printf("ERROR: Opening file %s\n", pathname);
 		return -1;
 	}
 
@@ -25,7 +30,7 @@ main(int argc, const char* argv[]){
 	ssize_t len = read(fd, buf, 64); 
 	
 	if(len == 0){
-		printf("ERROR: Reading file %s", pathname);
+		printf("ERROR: Reading file %s\n", pathname);
 		return -1; 
 	}
 
@@ -36,9 +41,9 @@ main(int argc, const char* argv[]){
 	//CLOSE FILE
 
 	if(close(fd)){
-		printf("ERROR: Closing file %s", pathname);
+		printf("ERROR: Closing file %s\n", pathname);
 		return -1; 
 	}
-	printf("SUCCESS: File operations finished");
+	printf("SUCCESS: File operations finished\n");
 	return 0; 
 }
