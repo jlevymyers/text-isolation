@@ -1,20 +1,20 @@
-#text-isolation 
+# text-isolation 
 Project which prevents execution across dynamic code sections. 
 
-#Making Project
-make inst 
+# Making Project
+make inst  
 
 make test 
 
-#Making Wrapper Project 
-./instrument [target] 
+# Making Wrapper Project 
+./instrument [target]
 
 make wrap
 
-#Running Linker with Hooks
+# Running Linker with Hooks
 make run
 
-#Structure of Project
+# Structure of Project
 
 ### Static Hook Generation 
 1. find\_syms() identifies all dynamic symbols in binary 
