@@ -26,6 +26,74 @@
 //state variable to prevent hook from getting hooked
 int call_count = 0;
 
+procmaps_struct* exec_map = NULL;
+
+/*
+ * iterates through the map of all memory regions
+ * and saves the executable region
+ */ 
+
+int save_exec_regions(procmaps_struct* map){
+	procmaps_struct* iter = map;
+       	int count = 0;
+	while(iter != NULL){
+		if(iter -> is_x){
+			count++;
+		}
+		iter = iter -> next; 
+	}
+	exec_map = (procmaps_struct*) malloc(count*sizeof(procmaps_struct));
+	if(exec_map == NULL){
+		return -1; 
+	}
+	int i = 0;
+	iter = map; 	
+	while(iter != NULL){
+		if(iter -> is_x){
+			memcpy(&exec_map[i], iter, sizeof(procmaps_struct));
+			i++; 
+		}
+		iter = iter -> next; 
+	}
+	return count;
+}
+
+/*
+ * constructor for runtime system that executes before the program
+ * creates an initial mapping of the text regions, and marks it read only
+ */ 
+
+__attribute__((constructor))
+void remap_code_ctor()
+{
+	printf("******************\n\n");	
+	pid_t pid = getpid();
+	procmaps_struct *maps = pmparser_parse(pid); 
+	int num_regions = save_exec_regions(maps); 
+	mprotect(exec_map, sizeof(procmaps_struct) * num_regions, PROT_READ);
+	printf("Runtime constructor running...\n");
+	printf("Initial Memory Mapping\n"); 
+	for(int i = 0; i < num_regions; i++){
+		printf("%d: %s 0x%lx-0x%lx\n", i, exec_map[i].pathname, (uintptr_t) exec_map[i].addr_start, (uintptr_t) exec_map[i].addr_end);	
+	}
+	printf("******************\n\n");	
+}
+
+/*
+ * destructor which runs after the target program exits 
+ * frees the text map 
+ */ 
+
+__attribute__((destructor))
+void remap_code_dtor()
+{
+	printf("Runtime destructor running\n");
+	if(exec_map != NULL){
+		free(exec_map);
+	}
+}
+
+
 /*
  * function which marks the code region containing symbol, executable
  *	marks all other executable code regions read only
@@ -53,7 +121,7 @@ int remap_code(const char* symbol, void *fun)
 			//wrapper code - KEEP EXEC!
 			if(!strncmp(DLWRAP_PATH, maps -> pathname, 600))
 			{
-				printf("wrapper.so 0x%lx-0x%lx, %d\n", mem_start, mem_end, sizeof(DLWRAP_PATH)); 
+				printf("wrapper.so 0x%lx-0x%lx, %ld\n", mem_start, mem_end, sizeof(DLWRAP_PATH)); 
 			}
 			else if(!strncmp(DL_PATH, maps -> pathname, sizeof(DL_PATH + 1)))
 			{
@@ -77,7 +145,7 @@ int remap_code(const char* symbol, void *fun)
 				else
 				{
 					printf("CODE: 0x%lx-0x%lx marked NON-EXEC, contains SYMBOL %s:0x%lx\n", mem_start, mem_end, symbol, ufun); 
-					err = mprotect(maps->addr_start, maps->length, PROT_READ | PROT_EXEC);
+					//err = mprotect(maps->addr_start, maps->length, PROT_READ | PROT_EXEC);
 					if(err)
 					{
 						printf("ERROR: mprotect PROT_READ | PROT_EXEC\n"); 
@@ -90,7 +158,7 @@ int remap_code(const char* symbol, void *fun)
 
 				//mark previously executable region as read only
 				printf("CODE: 0x%lx-0x%lx marked READ only\n", mem_start, mem_end); 
-				err = mprotect(maps -> addr_start, maps -> length, PROT_READ);
+				//err = mprotect(maps -> addr_start, maps -> length, PROT_READ);
 				if(err)
 					printf("ERROR: mprotect PROT_READ\n");
 			}
@@ -124,7 +192,7 @@ void *find_dyn_addr(const char* symbol)
 	}
 	else
 	{
-		remap_code(symbol, f);
+		//remap_code(symbol, f);
 		return f; 
 	} 
 }

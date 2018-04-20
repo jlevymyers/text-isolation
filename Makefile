@@ -14,15 +14,14 @@ TARGET ?= hello.txt
 find_dyn_addr.o: find_dyn_addr.c find_dyn_addr.h
 	$(CC) $(CDEBUG) -c find_dyn_addr.c $(CFLAGS) $(STATIC)
 
-
-generate_asm.o: generate_asm.c find_dyn_addr.h generate_asm.h 
+generate_asm.o: generate_asm.c generate_asm.h 
 	$(CC) $(CDEBUG) -c generate_asm.c $(CFLAGS)
 
-find_syms.o: find_syms.c generate_asm.h 
+find_syms.o: find_syms.c  
 	$(CC) $(CDEBUG) -c find_syms.c $(CFLAGS)
 
-inst: find_syms.o generate_asm.o find_dyn_addr.o 
-	$(CC) $(CDEBUG) -o instrument find_syms.o generate_asm.o find_dyn_addr.o $(CFLAGS)
+inst: find_syms.o generate_asm.o 
+	$(CC) $(CDEBUG) -o instrument find_syms.o generate_asm.o $(CFLAGS)
 
 test: open_test.c 
 	$(CC) $(CDEBUG) -o open_test open_test.c 
