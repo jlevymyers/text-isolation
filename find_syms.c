@@ -42,6 +42,7 @@ main(int argc, char* argv[])
 	char *header_base = (char*) header; 
 
 	Elf64_Shdr *shdr = (Elf64_Shdr *)(&header_base[header ->e_shoff]);
+	Elf64_Addr base_addr = header -> e_entry; /* entry point */ 
 	Elf64_Half shnum = header -> e_shnum;
 
 
@@ -62,7 +63,7 @@ main(int argc, char* argv[])
 	char buf[1024];
 
 	size_t len = 0; 
-	len = start_asm_file(buf);
+	len = start_asm_file(buf, base_addr);
 	write(fd_asm, buf, len);
 
 	//search for dynamic symbols 

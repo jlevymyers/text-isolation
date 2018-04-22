@@ -2,17 +2,19 @@
 #include <stdlib.h>
 #include <string.h> 
 #include "generate_asm.h"
-
 /*
  * generates the beginning of an assembly file
  *
  */
 
-size_t start_asm_file(char *target)
+size_t start_asm_file(char *target, uintptr_t base_addr) 
 {
 	asm_counter = 0;
 
 	size_t len = sprintf(target, "#include \"find_dyn_addr.h\"\n"); 
+	len += sprintf(target + len, ".globl __base_addr\n");
+	len += sprintf(target + len, "__base_addr:\n");
+	len += sprintf(target + len, "\t .quad 0x%lx \n", base_addr);
 	
 	//mark stack non-exec
 	//len += sprintf(target + len, ".section .note.GNU-stack, \"\", %%progbits\n");
@@ -60,6 +62,11 @@ size_t generate_asm(const char *symbol, char *target)
 	offset += sprintf(target + offset, "\tpushq %%rcx\n");
 	offset += sprintf(target + offset, "\tpushq %%r8\n");
 	offset += sprintf(target + offset, "\tpush %%r9\n");
+
+	//get return address 
+	//offset += sprintf(target + offset, "\tmovq $0, %%rdi\n"); //return level 0
+	//offset += sprintf(target + offset, "\t callq __builtin_return_address@PLT\n");
+	//offset += sprintf(target + offset, "\t movq %%rax, %%rsi\n");
 
 	//call hook 
 	offset += sprintf(target + offset, "\tleaq .name%x(%%rip), %%rdi\n", asm_counter);

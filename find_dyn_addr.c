@@ -16,17 +16,24 @@
 
 #include <stdint.h>
 
-#define DLWRAP_PATH "/gpfs/main/home/jlevymye/course/cs2951/project/wrapper.so"
-#define DL_PATH "/lib/x86-64-linux-gnu/libdl-2.24.so"
+const char* const DLWRAP_PATH = "/gpfs/main/home/jlevymye/course/cs2951/text-isolation/wrapper.so";
+const char* const DL_PATH  = "/lib/x86-64-linux-gnu/libdl-2.24.so";
+const char* const VSYSCALL ="[vsyscall]";
 
-#define VSYSCALL "[vsyscall]"
+extern uintptr_t __base_addr; 
 
 #define IN_RANGE(a, b, c) (a <= c) && (c < b)
 
 //state variable to prevent hook from getting hooked
 int call_count = 0;
 
+int on = 0;
+
 procmaps_struct* exec_map = NULL;
+
+const char * ALWAYS_EXEC[3] =  {"/gpfs/main/home/jlevymye/course/cs2951/text-isolation/wrapper.so",
+	"/lib/x86-64-linux-gnu/libdl-2.24.so",
+	"[vsyscall]"};
 
 /*
  * iterates through the map of all memory regions
@@ -76,7 +83,11 @@ void remap_code_ctor()
 	for(int i = 0; i < num_regions; i++){
 		printf("%d: %s 0x%lx-0x%lx\n", i, exec_map[i].pathname, (uintptr_t) exec_map[i].addr_start, (uintptr_t) exec_map[i].addr_end);	
 	}
-	printf("******************\n\n");	
+	printf("base address: 0x%lx\n", __base_addr);
+	uintptr_t return_addr = (uintptr_t) __builtin_return_address(0); 
+	printf("return address: 0x%lx\n", return_addr);
+	printf("******************\n\n");
+	on = 1;	
 }
 
 /*
@@ -91,8 +102,8 @@ void remap_code_dtor()
 	if(exec_map != NULL){
 		free(exec_map);
 	}
+	on = 0;
 }
-
 
 /*
  * function which marks the code region containing symbol, executable
@@ -100,7 +111,7 @@ void remap_code_dtor()
  */
 
 
-int remap_code(const char* symbol, void *fun)
+int remap_code(const char* symbol, uintptr_t fun)
 {
 	if(call_count == 0){
 		call_count ++; 
@@ -175,6 +186,7 @@ int remap_code(const char* symbol, void *fun)
 	return 0; 
 }
 
+
 /*
  * hook function for dynamic libraries, calls dynamic linker to resolve symbol
  * 	and then calls a function to handle the new memory mapping
@@ -182,18 +194,24 @@ int remap_code(const char* symbol, void *fun)
 
 void *find_dyn_addr(const char* symbol)
 {
+	uintptr_t return_addr = (uintptr_t) __builtin_return_address(1); 
+	char buf[256];
+       	if(on){
+		int len = snprintf(buf, 256, "Symbol: %s, return address: 0x%lx\n", symbol, return_addr);
+		write(1, buf, len);
+	}
 	void *f = dlsym(RTLD_NEXT, symbol); 
 	const char *err = dlerror();
 	if(err != NULL)
 	{
-		size_t len = strnlen(err, 0xFF);  
-		write(STDERR_FILENO, err, len); 
+		size_t err_len = strnlen(err, 0xFF);  
+		write(STDERR_FILENO, err, err_len); 
 		return NULL; 	
 	}
 	else
 	{
 		//remap_code(symbol, f);
 		return f; 
-	} 
+	}
 }
 
