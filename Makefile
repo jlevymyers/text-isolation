@@ -1,13 +1,16 @@
 .PHONY: all clean inst linktime test 
 
+#LD_DEBUG
+#intel XED 
 CC	?= gcc
 CDEBUG	= -Wall -Wextra -g 
 
-CSTD	=-std=c99
+CSTD	=-std=gnu99
 
 CFLAGS	= -z noexecstack -O0 $(CDEBUG) $(CSTD) -ldl -fPIC
 
-STATIC	= -static-libgcc -static-libstdc++ 
+STATIC	= 
+#-static-libgcc -static-libstdc++ 
 
 TARGET ?= hello.txt
 
@@ -30,7 +33,13 @@ wrap: dyn_wrapper.s find_dyn_addr.o
 	$(CC) $(CDEBUG) -shared -o wrapper.so dyn_wrapper.s find_dyn_addr.o $(CFLAGS) $(STATIC)	
 
 run: test wrap
-	LD_PRELOAD=$(PWD)/wrapper.so ./open_test $(TARGET) 
+	LD_PRELOAD=$(PWD)/wrapper.so /gpfs/main/home/jlevymye/course/cs2951/text-isolation/open_test $(TARGET) 
+
+gdb: test wrap
+	LD_PRELOAD=$(PWD)/wrapper.so gdb /gpfs/main/home/jlevymye/course/cs2951/text-isolation/open_test 
+
+trace: test wrap
+	LD_PRELOAD=$(PWD)/wrapper.so strace /gpfs/main/home/jlevymye/course/cs2951/text-isolation/open_test $(TARGET)
 
 all: inst test
 

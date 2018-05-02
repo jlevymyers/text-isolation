@@ -1,7 +1,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <stdio.h>
+//#include <stdio.h>
 #include <unistd.h>
 
 /*
@@ -12,7 +12,7 @@
 int
 main(int argc, const char* argv[]){
 	if(argc < 2){
-		printf("ERROR: No file specified\n");
+		//printf("ERROR: No file specified\n");
 		return -1; 
 	}
 	const char *pathname = argv[1]; 
@@ -20,7 +20,7 @@ main(int argc, const char* argv[]){
 	// OPEN FILE
 	int fd = open(pathname, O_RDWR);
 	if(fd < 0){
-		printf("ERROR: Opening file %s\n", pathname);
+		//printf("ERROR: Opening file %s\n", pathname);
 		return -1;
 	}
 
@@ -30,20 +30,20 @@ main(int argc, const char* argv[]){
 	ssize_t len = read(fd, buf, 64); 
 	
 	if(len == 0){
-		printf("ERROR: Reading file %s\n", pathname);
+		//printf("ERROR: Reading file %s\n", pathname);
 		return -1; 
 	}
 
 	//WRITE TO I/O
 
-	printf("\n %s \n", buf); 
+	write(1, buf, len); 
 
 	//CLOSE FILE
 
 	if(close(fd)){
-		printf("ERROR: Closing file %s\n", pathname);
+		//printf("ERROR: Closing file %s\n", pathname);
 		return -1; 
 	}
-	printf("SUCCESS: File operations finished\n");
+	//printf("SUCCESS: File operations finished\n");
 	return 0; 
 }

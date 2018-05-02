@@ -53,6 +53,7 @@ size_t generate_asm(const char *symbol, char *target)
 	offset += sprintf(target + offset, "\t.type\t%s,@function\n", symbol);
 
 	//prologue -- TODO save all registers
+	offset += sprintf(target + offset, "\tmovq %%rsp, %%r8\n");
 	offset += sprintf(target + offset, "\tpushq %%rbp\n");
 	offset += sprintf(target + offset, "\tmovq %%rsp, %%rbp\n");
 
@@ -62,7 +63,9 @@ size_t generate_asm(const char *symbol, char *target)
 	offset += sprintf(target + offset, "\tpushq %%rcx\n");
 	offset += sprintf(target + offset, "\tpushq %%r8\n");
 	offset += sprintf(target + offset, "\tpush %%r9\n");
-
+	offset += sprintf(target + offset, "\tpush %%r10\n");
+	offset += sprintf(target + offset, "\tpush %%r11\n");
+	
 	//get return address 
 	//offset += sprintf(target + offset, "\tmovq $0, %%rdi\n"); //return level 0
 	//offset += sprintf(target + offset, "\t callq __builtin_return_address@PLT\n");
@@ -70,9 +73,14 @@ size_t generate_asm(const char *symbol, char *target)
 
 	//call hook 
 	offset += sprintf(target + offset, "\tleaq .name%x(%%rip), %%rdi\n", asm_counter);
+	offset += sprintf(target + offset, "\tmovq %%r8, %%rsi\n");
 	offset += sprintf(target + offset, "\tcallq find_dyn_addr@PLT\n");
 
 	//epilogue -- TODO restore all registers 
+
+
+	offset += sprintf(target + offset, "\tpopq %%r11\n");
+	offset += sprintf(target + offset, "\tpopq %%r10\n");
 	offset += sprintf(target + offset, "\tpopq %%r9\n");
 	offset += sprintf(target + offset, "\tpopq %%r8\n");
 	offset += sprintf(target + offset, "\tpopq %%rcx\n");
@@ -82,6 +90,35 @@ size_t generate_asm(const char *symbol, char *target)
 
 	//call target function 
 	offset += sprintf(target + offset, "\tcallq *%%rax\n");
+
+
+	//save registers again
+	offset += sprintf(target + offset, "\tpushq %%rdi\n");
+	offset += sprintf(target + offset, "\tpush %%rsi\n");
+	offset += sprintf(target + offset, "\tpushq %%rdx\n");
+	offset += sprintf(target + offset, "\tpushq %%rcx\n");
+	offset += sprintf(target + offset, "\tpushq %%r8\n");
+	offset += sprintf(target + offset, "\tpush %%r9\n");
+
+	//set return address argument
+	offset += sprintf(target + offset, "\tmovq %%r8, %%rdi\n");
+
+	//save target return argument
+	offset += sprintf(target + offset, "\tpush %%rax\n");
+	
+	offset += sprintf(target + offset, "\tcallq runtime_return@PLT\n");
+	
+	//restore target return argument 
+	offset += sprintf(target + offset, "\tpop %%rax\n");
+	//restore registers 
+	offset += sprintf(target + offset, "\tpopq %%r9\n");
+	offset += sprintf(target + offset, "\tpopq %%r8\n");
+	offset += sprintf(target + offset, "\tpopq %%rcx\n");
+	offset += sprintf(target + offset, "\tpopq %%rdx\n");
+	offset += sprintf(target + offset, "\tpop %%rsi\n");
+	offset += sprintf(target + offset, "\tpopq %%rdi\n");
+
+	//restore target function return value
 	offset += sprintf(target + offset, "\tpopq %%rbp\n");
 	offset += sprintf(target + offset, "\tretq\n");
 
