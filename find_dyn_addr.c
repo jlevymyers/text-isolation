@@ -217,7 +217,7 @@ int always_exec(char *path){
  *	marks all other executable code regions read only
  */
 
-int remap_code(uintptr_t fun)
+int remap_code(uintptr_t fun, int all_exec)
 {
 	int i;
 	for(i = 0; i < num_exec_regions; i++)
@@ -238,8 +238,13 @@ int remap_code(uintptr_t fun)
 	
 		//wrapper code - KEEP EXEC!
 		if(always_exec(maps -> pathname)){
-			len = snprintf(print_buf, PRINT_SZ, "CODE: 0x%lx-0x%lx ALWAYS EXEC\n", mem_start, mem_end); 
-			_write(1, print_buf, len);
+			if(!all_exec){
+				len = snprintf(print_buf, PRINT_SZ, "CODE: 0x%lx-0x%lx ALWAYS EXEC\n", mem_start, mem_end); 
+				_write(1, print_buf, len);
+			}
+		}
+		else if(all_exec){
+			err = _mprotect(maps->addr_start, maps->length, PROT_EXEC | PROT_READ);
 		}
 		//called function in memory region -- mark exec 
 		else if(IN_RANGE((uintptr_t) mem_start, (uintptr_t) mem_end, (uintptr_t) fun))
@@ -249,7 +254,7 @@ int remap_code(uintptr_t fun)
 			{
 				len = snprintf(print_buf,
 					       	PRINT_SZ, 
-						"CODE: 0x%lx-0x%lx ALREADY marked EXEC, contains SYMBOL\n",
+						"CODE: 0x%lx-0x%lx ALREADY marked EXEC, contains TARGET\n",
 					       	mem_start, 
 						mem_end); 
 				_write(1, print_buf, len);
@@ -259,7 +264,7 @@ int remap_code(uintptr_t fun)
 
 				len = snprintf(print_buf, 
 						PRINT_SZ, 
-						"CODE: 0x%lx-0x%lx marked NON-EXEC, contains SYMBOL\n", 
+						"CODE: 0x%lx-0x%lx marked NX, contains TARGET, marking it EXEC...\n", 
 						mem_start, 
 						mem_end); 
 				_write(1, print_buf, len);
@@ -277,9 +282,9 @@ int remap_code(uintptr_t fun)
 
 			//mark previously executable region as read only
 			
-			len = snprintf(print_buf, PRINT_SZ, "CODE: 0x%lx-0x%lx marked READ only\n", mem_start, mem_end);
-			 _write(1, print_buf, len);
-		 	if(maps -> is_x){	 
+		 	if(maps -> is_x){
+				len = snprintf(print_buf, PRINT_SZ, "CODE: 0x%lx-0x%lx marked EXEC, marking it NX\n", mem_start, mem_end);
+				 _write(1, print_buf, len);
 				err = _mprotect(maps -> addr_start, maps -> length, PROT_READ);
 				maps -> is_x = 0;
 				if(err){
@@ -287,13 +292,19 @@ int remap_code(uintptr_t fun)
 					_write(1, print_buf, len);	
 				}
 			}
+			else{
+				len = snprintf(print_buf, PRINT_SZ, "CODE: 0x%lx-0x%lx marked NX\n", mem_start, mem_end);
+				 _write(1, print_buf, len);
+			}
 		}
 	}
 	return 0; 
 }
 
-int is_main(uintptr_t return_addr){
+int main_found = 0;
 
+int is_main(uintptr_t return_addr){
+	_write(1, "is_main", 7);
 	if(ctor_done){	
 	int i;
 	for(i = 0; i < num_exec_regions; i++){
@@ -326,7 +337,8 @@ void *find_dyn_addr(const char* symbol, uintptr_t *return_addr)
 		on = 0; 
 		was_on = 1; 
 	}
-	else if(is_main(*return_addr)){
+	else if((!main_found) && is_main(*return_addr)){
+		main_found = 1;
 		int len = snprintf(print_buf, PRINT_SZ, "First call from main... starting runtime\n");
 		_write(1, print_buf, len);
 		was_on =1;
@@ -335,7 +347,10 @@ void *find_dyn_addr(const char* symbol, uintptr_t *return_addr)
 		int len = snprintf(print_buf, PRINT_SZ, "Symbol: %s\n", symbol);
 		_write(1, print_buf, len);
 	}
-	void *f = dlsym(RTLD_NEXT, symbol); 
+	remap_code(NULL, 1); //DL_SYM only works on executable binaries -- POTENTIAL AVENUE OF ATTACK
+	void *f = dlsym(RTLD_NEXT, symbol);
+	int len = snprintf(print_buf, PRINT_SZ, "Dlsym addr: 0x%lx\n", f);
+	_write(1, print_buf, len);
 	const char *err = dlerror();
 	if(err != NULL)
 	{
@@ -346,7 +361,7 @@ void *find_dyn_addr(const char* symbol, uintptr_t *return_addr)
 	else
 	{
 		if(was_on){
-			remap_code((uintptr_t) f);
+			remap_code((uintptr_t) f, 0);
 			on = 1;
 		}
 		return f; 
@@ -359,7 +374,7 @@ int runtime_return(uintptr_t *return_addr){
 		char print_buf[PRINT_SZ];
 		int len = snprintf(print_buf, PRINT_SZ, "Returning to address: 0x%lx...\n:", *return_addr);
 		_write(1, print_buf, len);
-		remap_code(*return_addr);
+		remap_code(*return_addr, 0);
 		len = snprintf(print_buf, PRINT_SZ, "Returning...\n");
 		_write(1, print_buf, len);
 		on = 1;
