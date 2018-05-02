@@ -30,7 +30,7 @@ test: open_test.c
 	$(CC) $(CDEBUG) -o open_test open_test.c 
 
 wrap: dyn_wrapper.s find_dyn_addr.o
-	$(CC) $(CDEBUG) -shared -o wrapper.so dyn_wrapper.s find_dyn_addr.o $(CFLAGS) $(STATIC)	
+	$(CC) $(CDEBUG) -shared -o wrapper.so dyn_wrapper.s find_dyn_addr.o $(CFLAGS) $(STATIC) -nostdlib	
 
 run: test wrap
 	LD_PRELOAD=$(PWD)/wrapper.so /gpfs/main/home/jlevymye/course/cs2951/text-isolation/open_test $(TARGET) 
@@ -39,7 +39,7 @@ gdb: test wrap
 	LD_PRELOAD=$(PWD)/wrapper.so gdb /gpfs/main/home/jlevymye/course/cs2951/text-isolation/open_test 
 
 trace: test wrap
-	LD_PRELOAD=$(PWD)/wrapper.so strace /gpfs/main/home/jlevymye/course/cs2951/text-isolation/open_test $(TARGET)
+	LD_PRELOAD=$(PWD)/wrapper.so strace /gpfs/main/home/jlevymye/course/cs2951/text-isolation/open_test $(TARGET) LD_DEBUG=all
 
 all: inst test
 

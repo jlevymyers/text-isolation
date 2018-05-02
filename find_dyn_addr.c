@@ -43,7 +43,7 @@ int ctor_done = 0;
 const char * ALWAYS_EXEC[5] =  {"/gpfs/main/home/jlevymye/course/cs2951/text-isolation/wrapper.so",
 	"/lib/x86_64-linux-gnu/libdl-2.24.so",
 	"/lib/x86_64-linux-gnu/ld-2.24.so",
-	"/lib/x86_64-linux-gnu/libc-2.24.so",
+	//"/lib/x86_64-linux-gnu/libc-2.24.so",
 	"[vdso]", 
 	"[vsyscall]"};
 
@@ -200,8 +200,13 @@ void remap_code_dtor()
 int always_exec(char *path){
 	int i;
 	for(i = 0; i < ALWAYS_EXEC_SIZE; i++){
-		if(strncmp(path, ALWAYS_EXEC[i], 600) == 0){
-			return 1; 
+		for(int j= 0; j < 600; j++){
+			if(path[j] == '\0' && ALWAYS_EXEC[i][j] == '\0'){
+				return 1; 
+			}
+			if(path[j] != ALWAYS_EXEC[i][j]){
+				break; 
+			}
 		}
 	}
 	return 0;
@@ -222,7 +227,7 @@ int remap_code(uintptr_t fun)
 		int len; 
 		char print_buf[PRINT_SZ]; 
 
-		len = snprintf(print_buf, PRINT_SZ, "remaping code sections...\n"); 
+		len = snprintf(print_buf, PRINT_SZ, "Remaping code sections. Target text 0x%lx...\n", fun); 
 	       	procmaps_struct* maps = &exec_map[i];
 	      
 		len = snprintf(print_buf, PRINT_SZ, "%s\n", maps -> pathname); 
@@ -315,19 +320,17 @@ int is_main(uintptr_t return_addr){
 
 void *find_dyn_addr(const char* symbol, uintptr_t *return_addr)
 {
-	int was_on = 0; 
+	int was_on = 0;
+	char print_buf[PRINT_SZ];
 	if(on){
 		on = 0; 
 		was_on = 1; 
 	}
-
-	
 	else if(is_main(*return_addr)){
+		int len = snprintf(print_buf, PRINT_SZ, "First call from main... starting runtime\n");
+		_write(1, print_buf, len);
 		was_on =1;
-		_write(1, "call from main!!\n", 18);
 	}
-	
-	char print_buf[PRINT_SZ];
        	if(was_on){
 		int len = snprintf(print_buf, PRINT_SZ, "Symbol: %s\n", symbol);
 		_write(1, print_buf, len);
@@ -336,8 +339,8 @@ void *find_dyn_addr(const char* symbol, uintptr_t *return_addr)
 	const char *err = dlerror();
 	if(err != NULL)
 	{
-		size_t err_len = strnlen(err, 0xFF);  
-		_write(STDERR_FILENO, err, err_len); 
+		int len = snprintf(print_buf, PRINT_SZ, "%s\n", err);  
+		_write(STDERR_FILENO, print_buf, len); 
 		return NULL; 	
 	}
 	else
@@ -353,10 +356,12 @@ void *find_dyn_addr(const char* symbol, uintptr_t *return_addr)
 int runtime_return(uintptr_t *return_addr){
        	if(on){
 		on = 0;
-		char buf[256];
-		int len = snprintf(buf, 256, "Return address: 0x%lx\n", *return_addr);
-		_write(1, buf, len);
+		char print_buf[PRINT_SZ];
+		int len = snprintf(print_buf, PRINT_SZ, "Returning to address: 0x%lx...\n:", *return_addr);
+		_write(1, print_buf, len);
 		remap_code(*return_addr);
+		len = snprintf(print_buf, PRINT_SZ, "Returning...\n");
+		_write(1, print_buf, len);
 		on = 1;
 	}
 	return 0; 
