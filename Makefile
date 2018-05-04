@@ -29,8 +29,8 @@ inst: find_syms.o generate_asm.o
 test: open_test.c 
 	$(CC) $(CDEBUG) -o open_test open_test.c 
 
-wrap: dyn_wrapper.s find_dyn_addr.o
-	$(CC) $(CDEBUG) -shared -o wrapper.so dyn_wrapper.s find_dyn_addr.o $(CFLAGS) $(STATIC) -nostdlib	
+wrap: dyn_wrapper.s find_dyn_addr.o pmparser.o
+	$(CC) $(CDEBUG) -shared -o wrapper.so dyn_wrapper.s find_dyn_addr.o pmparser.o $(CFLAGS) $(STATIC) -nostdlib	
 
 run: test wrap
 	LD_PRELOAD=$(PWD)/wrapper.so /gpfs/main/home/jlevymye/course/cs2951/text-isolation/open_test $(TARGET) 
@@ -38,10 +38,13 @@ run: test wrap
 gdb: test wrap
 	LD_PRELOAD=$(PWD)/wrapper.so gdb /gpfs/main/home/jlevymye/course/cs2951/text-isolation/open_test 
 
+pmparser.o: $(PWD)/proc_maps_parser/pmparser.c
+	$(CC) $(CDEBUG) -c $(PWD)/proc_maps_parser/pmparser.c $(CFLAGS)
+
 trace: test wrap
 	LD_PRELOAD=$(PWD)/wrapper.so strace /gpfs/main/home/jlevymye/course/cs2951/text-isolation/open_test $(TARGET) LD_DEBUG=all
 
 all: inst test
 
 clean: 
-	rm -f instrument find_syms.o generate_asm.o find_dyn_addr.o open_test wrapper.so dyn_wrapper.s 
+	rm -f instrument open_test wrapper.so dyn_wrapper.s *.o

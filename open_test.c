@@ -3,6 +3,7 @@
 #include <fcntl.h>
 //#include <stdio.h>
 #include <unistd.h>
+#include <stdlib.h>
 
 /*
  * model test program which echos a file to stdout with unix read/write API
@@ -10,7 +11,7 @@
 
 
 int
-main(int argc, const char* argv[]){
+main(int argc, const char* argv[], char* envp[]){
 	if(argc < 2){
 		//printf("ERROR: No file specified\n");
 		return -1; 
@@ -45,5 +46,5 @@ main(int argc, const char* argv[]){
 		return -1; 
 	}
 	//printf("SUCCESS: File operations finished\n");
-	return 0; 
+	exit(0); 
 }

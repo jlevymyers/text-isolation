@@ -10,7 +10,7 @@
 #include "printf/printf.c"
 
 #include "proc_maps_parser/pmparser.h"
-#include "proc_maps_parser/pmparser.c"
+//#include "proc_maps_parser/pmparser.c"
 
 #include "find_dyn_addr.h"
 
@@ -39,6 +39,7 @@ int num_exec_regions = 0;
 char *main_name = "no main";
 
 int ctor_done = 0;
+int remap_code(uintptr_t fun, int all_exec);
 
 const char * ALWAYS_EXEC[5] =  {"/gpfs/main/home/jlevymye/course/cs2951/text-isolation/wrapper.so",
 	"/lib/x86_64-linux-gnu/libdl-2.24.so",
@@ -68,7 +69,7 @@ int _write(int fd, const void *buf, size_t count){
 int _mprotect(void *addr, size_t len, int prot){
 	register int result asm("rax") = __NR_mprotect;
 	register void *_addr asm("rdi") = addr; 
-	register const void *_len asm("rsi") = len;
+	register size_t _len asm("rsi") = len;
 	register size_t _prot asm("rdx") = prot; 
 	asm volatile(
 			"syscall"
@@ -150,7 +151,7 @@ void init(int argc, char **argv, char **envp)
 
 	on = 0;
 
-	len = snprintf(print_buf, PRINT_SZ, "\n\n******************\n\nRuntime constructor running...\nInital Memory Mapping:\n");
+	len = _snprintf(print_buf, PRINT_SZ, "\n\n******************\n\nRuntime constructor running...\nInital Memory Mapping:\n");
 	_write(1, print_buf, len);
 
 	pid_t pid = getpid();
@@ -158,16 +159,16 @@ void init(int argc, char **argv, char **envp)
 	num_exec_regions = save_exec_regions(maps);
 	//mprotect(exec_map, sizeof(procmaps_struct) * num_exec_regions, PROT_READ);
 	for(int i = 0; i < num_exec_regions; i++){
-		len = snprintf(print_buf, PRINT_SZ, "%d: %s 0x%lx-0x%lx\n", i, exec_map[i].pathname, (uintptr_t) exec_map[i].addr_start, (uintptr_t) exec_map[i].addr_end);
+		len = _snprintf(print_buf, PRINT_SZ, "%d: %s 0x%lx-0x%lx\n", i, exec_map[i].pathname, (uintptr_t) exec_map[i].addr_start, (uintptr_t) exec_map[i].addr_end);
 		_write(1, print_buf, len); 
 	}
-	len = snprintf(print_buf, PRINT_SZ, "base address: 0x%lx\n", __base_addr);
+	len = _snprintf(print_buf, PRINT_SZ, "base address: 0x%lx\n", __base_addr);
 	_write(1, print_buf, len);
 	//uintptr_t return_addr = (uintptr_t) __builtin_return_address(0);
 	//printf("CTOR: return address: 0x%lx\n", return_addr);
         //remap_code("start address", return_addr);	
 
-	len = snprintf(print_buf, PRINT_SZ, "\n\n******************\n\n");
+	len = _snprintf(print_buf, PRINT_SZ, "\n\n******************\n\n");
 	_write(1, print_buf, len);	
 
 	ctor_done = 1;
@@ -181,15 +182,17 @@ __attribute__((section(".init_array"))) void (*__init) (int, char**, char**) = &
  * frees the text map 
  */ 
 
-__attribute__((destructor))
-void remap_code_dtor()
+//__attribute__((destructor))
+void fini()
 {
 	_write(1, "Runtime destructor running...\n", 30);
 	if(exec_map != NULL){
 		//free(exec_map);
 	}
-	on = 0;
+	remap_code(0, 1); 
 }
+
+__attribute__((section(".fini_array"))) void(*__fini) () = &fini;
 
 /*
  * function which compares path to the list of regions which must 
@@ -212,6 +215,12 @@ int always_exec(char *path){
 	return 0;
 }
 
+
+int _strcmp(const char *a, const char *b) {
+	  while (*a && *a == *b)
+		      ++a, ++b;
+	    return *a - *b;
+}
 /*
  * function which marks the code region containing symbol, executable
  *	marks all other executable code regions read only
@@ -227,10 +236,10 @@ int remap_code(uintptr_t fun, int all_exec)
 		int len; 
 		char print_buf[PRINT_SZ]; 
 
-		len = snprintf(print_buf, PRINT_SZ, "Remaping code sections. Target text 0x%lx...\n", fun); 
+		len = _snprintf(print_buf, PRINT_SZ, "Remaping code sections. Target text 0x%lx...\n", fun); 
 	       	procmaps_struct* maps = &exec_map[i];
 	      
-		len = snprintf(print_buf, PRINT_SZ, "%s\n", maps -> pathname); 
+		len = _snprintf(print_buf, PRINT_SZ, "%s\n", maps -> pathname); 
 		_write(1, print_buf, len); 
 		//TODO restore original memory mapping
 		uintptr_t mem_start =  (uintptr_t) maps -> addr_start;  
@@ -239,7 +248,7 @@ int remap_code(uintptr_t fun, int all_exec)
 		//wrapper code - KEEP EXEC!
 		if(always_exec(maps -> pathname)){
 			if(!all_exec){
-				len = snprintf(print_buf, PRINT_SZ, "CODE: 0x%lx-0x%lx ALWAYS EXEC\n", mem_start, mem_end); 
+				len = _snprintf(print_buf, PRINT_SZ, "CODE: 0x%lx-0x%lx ALWAYS EXEC\n", mem_start, mem_end); 
 				_write(1, print_buf, len);
 			}
 		}
@@ -252,7 +261,7 @@ int remap_code(uintptr_t fun, int all_exec)
 			//check if already marked EXEC
 			if(maps -> is_x)
 			{
-				len = snprintf(print_buf,
+				len = _snprintf(print_buf,
 					       	PRINT_SZ, 
 						"CODE: 0x%lx-0x%lx ALREADY marked EXEC, contains TARGET\n",
 					       	mem_start, 
@@ -262,7 +271,7 @@ int remap_code(uintptr_t fun, int all_exec)
 			else
 			{
 
-				len = snprintf(print_buf, 
+				len = _snprintf(print_buf, 
 						PRINT_SZ, 
 						"CODE: 0x%lx-0x%lx marked NX, contains TARGET, marking it EXEC...\n", 
 						mem_start, 
@@ -272,7 +281,7 @@ int remap_code(uintptr_t fun, int all_exec)
 				maps -> is_x = 1; 
 				if(err)
 				{
-					len = snprintf(print_buf, PRINT_SZ, "ERROR: mprotect PROT_READ | PROT_EXEC\n");
+					len = _snprintf(print_buf, PRINT_SZ, "ERROR: mprotect PROT_READ | PROT_EXEC\n");
 				       _write(1, print_buf, len);	
 				}
 			}
@@ -283,17 +292,17 @@ int remap_code(uintptr_t fun, int all_exec)
 			//mark previously executable region as read only
 			
 		 	if(maps -> is_x){
-				len = snprintf(print_buf, PRINT_SZ, "CODE: 0x%lx-0x%lx marked EXEC, marking it NX\n", mem_start, mem_end);
+				len = _snprintf(print_buf, PRINT_SZ, "CODE: 0x%lx-0x%lx marked EXEC, marking it NX\n", mem_start, mem_end);
 				 _write(1, print_buf, len);
 				err = _mprotect(maps -> addr_start, maps -> length, PROT_READ);
 				maps -> is_x = 0;
 				if(err){
-					len = snprintf(print_buf, PRINT_SZ, "ERROR: mprotect PROT_READ\n");
+					len = _snprintf(print_buf, PRINT_SZ, "ERROR: mprotect PROT_READ\n");
 					_write(1, print_buf, len);	
 				}
 			}
 			else{
-				len = snprintf(print_buf, PRINT_SZ, "CODE: 0x%lx-0x%lx marked NX\n", mem_start, mem_end);
+				len = _snprintf(print_buf, PRINT_SZ, "CODE: 0x%lx-0x%lx marked NX\n", mem_start, mem_end);
 				 _write(1, print_buf, len);
 			}
 		}
@@ -301,16 +310,13 @@ int remap_code(uintptr_t fun, int all_exec)
 	return 0; 
 }
 
-int main_found = 0;
-
 int is_main(uintptr_t return_addr){
-	_write(1, "is_main", 7);
 	if(ctor_done){	
 	int i;
 	for(i = 0; i < num_exec_regions; i++){
 		procmaps_struct *current = &exec_map[i]; 
 		if(IN_RANGE((uintptr_t) current -> addr_start, (uintptr_t) current -> addr_end, (uintptr_t) return_addr)){
-			if(strstr(main_name, current -> pathname)){
+			if(_strcmp(main_name, current -> pathname) == 0){
 				return 1; 
 			}
 			else{
@@ -333,28 +339,31 @@ void *find_dyn_addr(const char* symbol, uintptr_t *return_addr)
 {
 	int was_on = 0;
 	char print_buf[PRINT_SZ];
-	if(on){
+	if(_strcmp("exit", symbol) == 0){
+		fini(); 
+	}
+	else if(on){
 		on = 0; 
 		was_on = 1; 
 	}
-	else if((!main_found) && is_main(*return_addr)){
-		main_found = 1;
-		int len = snprintf(print_buf, PRINT_SZ, "First call from main... starting runtime\n");
+	else if(is_main(*return_addr)){
+		int len = _snprintf(print_buf, PRINT_SZ, "First call from main... starting runtime\n");
 		_write(1, print_buf, len);
 		was_on =1;
 	}
        	if(was_on){
-		int len = snprintf(print_buf, PRINT_SZ, "Symbol: %s\n", symbol);
+		int len = _snprintf(print_buf, PRINT_SZ, "Symbol: %s\n", symbol);
 		_write(1, print_buf, len);
 	}
-	remap_code(NULL, 1); //DL_SYM only works on executable binaries -- POTENTIAL AVENUE OF ATTACK
+
+	remap_code(0, 1); //DL_SYM only works on executable binaries -- POTENTIAL AVENUE OF ATTACK
 	void *f = dlsym(RTLD_NEXT, symbol);
-	int len = snprintf(print_buf, PRINT_SZ, "Dlsym addr: 0x%lx\n", f);
+	int len = _snprintf(print_buf, PRINT_SZ, "Dlsym addr: 0x%lx\n", (uintptr_t) f);
 	_write(1, print_buf, len);
 	const char *err = dlerror();
 	if(err != NULL)
 	{
-		int len = snprintf(print_buf, PRINT_SZ, "%s\n", err);  
+		int len = _snprintf(print_buf, PRINT_SZ, "%s\n", err);  
 		_write(STDERR_FILENO, print_buf, len); 
 		return NULL; 	
 	}
@@ -372,10 +381,10 @@ int runtime_return(uintptr_t *return_addr){
        	if(on){
 		on = 0;
 		char print_buf[PRINT_SZ];
-		int len = snprintf(print_buf, PRINT_SZ, "Returning to address: 0x%lx...\n:", *return_addr);
+		int len = _snprintf(print_buf, PRINT_SZ, "Returning to address: 0x%lx...\n:", *return_addr);
 		_write(1, print_buf, len);
 		remap_code(*return_addr, 0);
-		len = snprintf(print_buf, PRINT_SZ, "Returning...\n");
+		len = _snprintf(print_buf, PRINT_SZ, "Returning...\n");
 		_write(1, print_buf, len);
 		on = 1;
 	}
