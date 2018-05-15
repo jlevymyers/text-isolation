@@ -47,7 +47,6 @@ main(int argc, char* argv[])
 
 
 	Elf64_Half i; 	
-	Elf64_Off str_off; 
 	Elf64_Xword j;
 
 	printf("opened fd %i, size %ld", fd, size);
@@ -61,30 +60,92 @@ main(int argc, char* argv[])
 	}
 
 	char buf[1024];
-
 	size_t len = 0; 
 	len = start_asm_file(buf, base_addr);
 	write(fd_asm, buf, len);
 
-	//search for dynamic symbols 
+	//Index of Section Name String Table
+	Elf64_Half strtab_idx = header -> e_shstrndx;
+	
+	char* section_strtab = header_base + shdr[strtab_idx].sh_offset;
+
+	char* strtab = NULL;  
+	Elf64_Addr main_off = 0;
+	Elf64_Xword main_size = 0;
+
+	//Find String Table
+	for(i = 0; i < shnum; ++i){
+		Elf64_Shdr section = shdr[i];
+		if(section.sh_type == SHT_STRTAB && i != strtab_idx){
+		       	if(strtab != NULL){
+				printf("ERROR: Two string tables\n"); 
+			}
+			strtab = &header_base[section.sh_offset];
+		}
+	}
+
+
+	//Search for dynamic symbols, and main 
 	for(i = 0; i < shnum; ++i)
 	{
-		if(shdr[i].sh_type==SHT_DYNSYM){
-			str_off =  shdr[shdr[i].sh_link].sh_offset;
-			Elf64_Sym *symboler = (Elf64_Sym *)(&header_base[shdr[i].sh_offset]);
-			for(j = 0; j<(shdr[i].sh_size/shdr[i].sh_entsize); j++)
+		Elf64_Shdr section = shdr[i];
+		//find dynamic symbols for instrumentation
+		if(section.sh_type==SHT_DYNSYM){
+			
+			//sh_link points to string table for dynamic symbols
+			printf("[%u] Dynamic Symbol Table: %s\n", i, section_strtab + shdr[i].sh_name);
+
+			char *dyn_strtab =  header_base + shdr[section.sh_link].sh_offset;
+			Elf64_Sym *symboler = (Elf64_Sym *)(&header_base[section.sh_offset]);
+			
+			for(j = 0; j<(section.sh_size/sizeof(Elf64_Sym)); j++)
 			{
 				memset(buf,0, sizeof(buf));
-				char *sym_name = (char*) (&header_base[str_off + symboler-> st_name]);
+				char *sym_name = dyn_strtab + symboler-> st_name;
 				len = generate_asm(sym_name, buf); 
 				if(len > 0){
 					ssize_t num_written = write(fd_asm, buf, len);
-					printf("added '%s' instrumentation, bytes written: %li\n", sym_name, num_written);
+					printf("\t added '%s' instrumentation, bytes written: %li\n", sym_name, num_written);
 				}
 				fsync(fd_asm);
 				symboler++; 
 			}
 		}
+		//find main function
+		if(section.sh_type==SHT_SYMTAB){
+			printf("[%u] Symbol Table: %s\n", i, section_strtab + section.sh_name);
+			
+			
+			Elf64_Sym *symboler = (Elf64_Sym *)(&header_base[section.sh_offset]);
+			for(j = 0; j<(section.sh_size/sizeof(Elf64_Sym)); j++)
+			{
+					memset(buf,0, sizeof(buf));
+					char *sym_name = &strtab[symboler-> st_name];
+					if(!strncmp(sym_name, "main", 5) && (ELF64_ST_TYPE(symboler -> st_info) == STT_FUNC)){
+						printf( 
+							"\t[%lu]: %s, Strtab Index: 0x%x, Value: 0x%lx, Size: 0x%lx, Info: 0x%hhx\n",
+							j ,sym_name, symboler -> st_name, symboler -> st_value, 
+							symboler -> st_size, ELF64_ST_TYPE(symboler -> st_info));
+						//Save Main Value for Instrumentation
+						if(main_off != 0){
+							printf("ERROR: Two Main Functions Found\n"); 
+						}
+						main_off = symboler -> st_value;
+						main_size = symboler -> st_size; 
+					}
+				symboler++;
+			}	
+		}
+	}
+
+	if(main_off == 0){
+		printf("ERROR: Main function could not be found\n");
+		return -1;	
+	}
+
+	//Find Main Executable Text
+	for(i = 0; i < shnum; ++i){
+		Elf64_Shdr section = shdr[i];	
 	}
 
 	//clean up
@@ -94,5 +155,6 @@ main(int argc, char* argv[])
 	return 0;
 
 }
+
 
 //Elf64_Shdr *sh_strtab = &shdr[header -> e_shstrndx];

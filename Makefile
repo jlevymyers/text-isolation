@@ -48,3 +48,6 @@ all: inst test
 
 clean: 
 	rm -f instrument open_test wrapper.so dyn_wrapper.s *.o
+
+
+#objcopy

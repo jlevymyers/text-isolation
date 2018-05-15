@@ -1,7 +1,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-//#include <stdio.h>
+#include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
 
@@ -27,8 +27,8 @@ main(int argc, const char* argv[], char* envp[]){
 
 	//READ FILE
 
-	char buf[64];
-	ssize_t len = read(fd, buf, 64); 
+	char buf[32];
+	ssize_t len = read(fd, buf, 256); 
 	
 	if(len == 0){
 		//printf("ERROR: Reading file %s\n", pathname);
@@ -47,4 +47,9 @@ main(int argc, const char* argv[], char* envp[]){
 	}
 	//printf("SUCCESS: File operations finished\n");
 	exit(0); 
+}
+
+int main_2(int arg, const char* argv[], char* envp[]){
+	printf("reached isntrumented main\n");
+	exit(0);
 }
