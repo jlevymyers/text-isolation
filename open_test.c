@@ -45,11 +45,12 @@ main(int argc, const char* argv[], char* envp[]){
 		//printf("ERROR: Closing file %s\n", pathname);
 		return -1; 
 	}
-	//printf("SUCCESS: File operations finished\n");
-	exit(0); 
+	printf("SUCCESS: File operations finished\n");
 }
 
-int main_2(int arg, const char* argv[], char* envp[]){
-	printf("reached isntrumented main\n");
+int _main2(int arg, const char* argv[], char* envp[]){
+	printf("Reached instrumented main\n");
+	printf("Calling main...\n");
+	main(arg, argv, envp); 
 	exit(0);
 }

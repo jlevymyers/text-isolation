@@ -37,9 +37,9 @@ size_t generate_asm(const char *symbol, char *target)
 	if(len < 1){
 		return -1;
 	}
-	if(symbol[0] == '_'){
-		return 0;
-	}
+	//if(symbol[0] == '_' &&  symbol[1] == '_'){
+//		return 0;
+//	}
 
 	size_t offset = 0;
 
@@ -57,7 +57,6 @@ size_t generate_asm(const char *symbol, char *target)
 	offset += sprintf(target + offset, "\tpushq %%rbp\n");
 	offset += sprintf(target + offset, "\tmovq %%rsp, %%rbp\n");
 
-	offset += sprintf(target + offset, "\tpushq %%rdi\n");
 	offset += sprintf(target + offset, "\tpush %%rsi\n");
 	offset += sprintf(target + offset, "\tpushq %%rdx\n");
 	offset += sprintf(target + offset, "\tpushq %%rcx\n");
@@ -65,6 +64,10 @@ size_t generate_asm(const char *symbol, char *target)
 	offset += sprintf(target + offset, "\tpush %%r9\n");
 	offset += sprintf(target + offset, "\tpush %%r10\n");
 	offset += sprintf(target + offset, "\tpush %%r11\n");
+
+	//save address of %rdi saved register to modify arguments to __libc_start_main	
+	offset += sprintf(target + offset, "\tpushq %%rdi\n");
+	offset += sprintf(target + offset, "\tmovq %%rsp, %%rdx\n");
 	
 	//get return address 
 	//offset += sprintf(target + offset, "\tmovq $0, %%rdi\n"); //return level 0
@@ -78,7 +81,8 @@ size_t generate_asm(const char *symbol, char *target)
 
 	//epilogue -- TODO restore all registers 
 
-
+	offset += sprintf(target + offset, "\tpopq %%rdi\n");
+	
 	offset += sprintf(target + offset, "\tpopq %%r11\n");
 	offset += sprintf(target + offset, "\tpopq %%r10\n");
 	offset += sprintf(target + offset, "\tpopq %%r9\n");
@@ -86,7 +90,6 @@ size_t generate_asm(const char *symbol, char *target)
 	offset += sprintf(target + offset, "\tpopq %%rcx\n");
 	offset += sprintf(target + offset, "\tpopq %%rdx\n");
 	offset += sprintf(target + offset, "\tpop %%rsi\n");
-	offset += sprintf(target + offset, "\tpopq %%rdi\n");
 
 	//call target function 
 	offset += sprintf(target + offset, "\tcallq *%%rax\n");

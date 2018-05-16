@@ -142,9 +142,7 @@ int save_exec_regions(procmaps_struct* map){
  * creates an initial mapping of the text regions, and marks it read only
  */ 
 
-//__attribute__((constructor))
-
-void init(int argc, char **argv, char **envp)
+void init(uintptr_t main_addr)
 {
 	int len; 
 	char print_buf[PRINT_SZ]; 
@@ -162,20 +160,17 @@ void init(int argc, char **argv, char **envp)
 		len = _snprintf(print_buf, PRINT_SZ, "%d: %s 0x%lx-0x%lx\n", i, exec_map[i].pathname, (uintptr_t) exec_map[i].addr_start, (uintptr_t) exec_map[i].addr_end);
 		_write(1, print_buf, len); 
 	}
-	//len = _snprintf(print_buf, PRINT_SZ, "base address: 0x%lx\n", __base_addr);
-	//_write(1, print_buf, len);
-	//uintptr_t return_addr = (uintptr_t) __builtin_return_address(0);
-	//printf("CTOR: return address: 0x%lx\n", return_addr);
-        //remap_code("start address", return_addr);	
+       
 
 	len = _snprintf(print_buf, PRINT_SZ, "\n\n******************\n\n");
-	_write(1, print_buf, len);	
 
+
+	len = _snprintf(print_buf, PRINT_SZ, "Marking non-main code NX. Main symbol at address %lx\n", main_addr);
+	_write(1, print_buf, len);
+	remap_code(main_addr, 0);	
 	ctor_done = 1;
-	main_name = argv[0];
-	//printf(main_name);
 }
-__attribute__((section(".init_array"))) void (*__init) (int, char**, char**) = &init;
+//__attribute__((section(".init_array"))) void (*__init) (int, char**, char**) = &init;
 
 /*
  * destructor which runs after the target program exits 
@@ -192,7 +187,8 @@ void fini()
 	remap_code(0, 1); 
 }
 
-__attribute__((section(".fini_array"))) void(*__fini) () = &fini;
+
+//__attribute__((section(".fini_array"))) void(*__fini) () = &fini;
 
 /*
  * function which compares path to the list of regions which must 
@@ -311,24 +307,41 @@ int remap_code(uintptr_t fun, int all_exec)
 	return 0; 
 }
 
-int is_main(uintptr_t return_addr){
-	if(ctor_done){	
-	int i;
-	for(i = 0; i < num_exec_regions; i++){
-		procmaps_struct *current = &exec_map[i]; 
-		if(IN_RANGE((uintptr_t) current -> addr_start, (uintptr_t) current -> addr_end, (uintptr_t) return_addr)){
-			if(_strcmp(main_name, current -> pathname) == 0){
-				return 1; 
-			}
-			else{
-				return 0;
-			}
-		}
-	}
-	return -1;
-	}
-	return 0;
+typedef int (*main_t)(int, const char**, char**);
+
+main_t main_addr = NULL;
+
+int error(){
+	_write(1, "ERROR: Resolving Symbol. Exiting Process...\n", 7);
+	exit(1);
 }
+
+int dti_main(int argc, const char* argv[], char *envp[]){
+	char print_buf[PRINT_SZ];
+	int len = _snprintf(print_buf, PRINT_SZ, "Call to main sucessfully redirected\n");
+	_write(1, print_buf, len);
+
+	len = _snprintf(print_buf, PRINT_SZ, "Calling runtime constructor...\n");
+	_write(1, print_buf, len);
+	init((uintptr_t) main_addr);
+
+	len = _snprintf(print_buf, PRINT_SZ, "Calling main at address: %lx...\n", main_addr);
+	_write(1, print_buf, len);
+
+	on = 1;	
+	int result = (*main_addr)(argc, argv, envp);
+	on = 0;
+
+	len = _snprintf(print_buf, PRINT_SZ, "Return from main with value: %d\n", result);
+	_write(1, print_buf, len);
+	fini();
+
+	len = _snprintf(print_buf, PRINT_SZ, "Calling runtime destructor...\n");
+	_write(1, print_buf, len);
+
+	return result;
+}
+
 
 
 /*
@@ -336,7 +349,7 @@ int is_main(uintptr_t return_addr){
  * 	and then calls a function to handle the new memory mapping
  */
 
-void *find_dyn_addr(const char* symbol, uintptr_t *return_addr)
+void *find_dyn_addr(const char* symbol, uintptr_t *return_addr, uintptr_t *rdi)
 {
 	int was_on = 0;
 	char print_buf[PRINT_SZ];
@@ -347,12 +360,19 @@ void *find_dyn_addr(const char* symbol, uintptr_t *return_addr)
 		on = 0; 
 		was_on = 1; 
 	}
-	else if(is_main(*return_addr)){
-		int len = _snprintf(print_buf, PRINT_SZ, "First call from main... starting runtime\n");
+	else if(!_strcmp("__libc_start_main", symbol)){
+		int len = _snprintf(print_buf, PRINT_SZ, "Call to libc main initialization function\n");
 		_write(1, print_buf, len);
-		was_on =1;
+		void *f = dlsym(RTLD_NEXT, symbol);
+		main_addr = (main_t) (*rdi); 
+		len = _snprintf(print_buf, PRINT_SZ, "Main at: 0x%lx, Redirecting main to: 0x%lx, Stack Location 0x%lx\n", *rdi, (uintptr_t) &dti_main, rdi);
+		_write(1, print_buf, len);
+		*rdi = (uintptr_t) &dti_main;
+		return f; 
+		
 	}
-       	if(was_on){
+       	
+	if(was_on){
 		int len = _snprintf(print_buf, PRINT_SZ, "Symbol: %s\n", symbol);
 		_write(1, print_buf, len);
 	}
@@ -364,15 +384,18 @@ void *find_dyn_addr(const char* symbol, uintptr_t *return_addr)
 	const char *err = dlerror();
 	if(err != NULL)
 	{
-		int len = _snprintf(print_buf, PRINT_SZ, "%s\n", err);  
+		int len = _snprintf(print_buf, PRINT_SZ, "ERROR: DLOPEN\n\t%s\n", err);  
 		_write(STDERR_FILENO, print_buf, len); 
-		return NULL; 	
+		return &error; 	
 	}
 	else
 	{
 		if(was_on){
 			remap_code((uintptr_t) f, 0);
 			on = 1;
+		}
+		else{
+			printf("WARNING: Returning with all code marked EXEC\n");
 		}
 		return f; 
 	}
