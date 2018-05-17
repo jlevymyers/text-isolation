@@ -1,42 +1,33 @@
 #define _GNU_SOURCE
 
 #include <dlfcn.h>
+#include <link.h>
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <asm/unistd.h>
-
-#include "printf/printf.h"
-#include "printf/printf.c"
-
-#include "proc_maps_parser/pmparser.h"
-//#include "proc_maps_parser/pmparser.c"
+#include <stddef.h>
+#include "tinyprintf/tinyprintf.h"
+#include "tinyprintf/tinyprintf.c"
 
 #include "find_dyn_addr.h"
+
+#include <link.h>
 
 
 const char* const DLWRAP_PATH = "/gpfs/main/home/jlevymye/course/cs2951/text-isolation/wrapper.so";
 const char* const DL_PATH  = "/lib/x86-64-linux-gnu/libdl-2.24.so";
 const char* const VSYSCALL ="[vsyscall]";
 
-extern uintptr_t __base_addr; 
-
 #define IN_RANGE(a, b, c) (a <= c) && (c < b)
-
-//state variable to prevent hook from getting hooked
-int call_count = 0;
 
 int on = 0;
 
-
-//#define __NR_write 1
-//#define __NR_mprotect 10
-
-procmaps_struct* exec_map = NULL;
-
-int num_exec_regions = 0;
-
-char *main_name = "no main";
+#define EXEC_LIST_MAX 1024 
+exec_segment_t* exec_list_head = NULL;
+int exec_list_size = 0;
+int executable_array[1024]; 
 
 int ctor_done = 0;
 int remap_code(uintptr_t fun, int all_exec);
@@ -101,11 +92,102 @@ void* _mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off){
 	return result; 
 }	
 
+/* 
+ * https://github.com/GaloisInc/minlibc/blob/master/strncpy.c
+ */
+
+char  *strncpy(char *dest, const char *src, size_t count)
+{
+	char *tmp = dest;
+	while (count-- && (*dest++ = *src++) != '\0')
+	/* nothing */;
+	return tmp;
+}
+
+/*
+ * allocates memory for a new segment representing an executable segment
+ */ 
+
+exec_segment_t *add_segment(uintptr_t vaddr_start, size_t size, const char *name, exec_segment_t **exec_list){
+	char print_buf[PRINT_SZ];
+	if(exec_list == NULL){
+		int len = tfp_snprintf(print_buf, PRINT_SZ, "ERROR: Invalid Pointer\n");
+		_write(1, print_buf, len);
+		return NULL;
+	}
+	
+	exec_segment_t *segment= (exec_segment_t *) _mmap(NULL, sizeof(exec_segment_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); 
+	if(segment == ((void *) -1)){
+		int len = tfp_snprintf(print_buf, PRINT_SZ, "ERROR: mmap failed. could not create segement\n");
+		_write(1, print_buf, len);
+		return NULL; 
+	}
+	
+	segment -> vaddr_start = vaddr_start;
+	segment -> vaddr_end = vaddr_start + size; 
+	segment -> size = size; 
+	segment -> next = NULL;
+	strncpy(segment -> name, name, DTI_NAME_SZ);
+	//give the executable segment a pointer to its (sometimes) modifiable execuatable bit
+	segment -> executable = executable_array + exec_list_size;	
+
+	if(*exec_list == NULL){
+		*exec_list = segment; 
+		exec_list_size++; 
+		
+		int len = tfp_snprintf(print_buf, PRINT_SZ, "[%d]Successfully created new segment at head of list, address 0x%x\n", exec_list_size - 1, segment);
+		_write(1, print_buf, len);
+		
+		return segment; 
+	}
+
+	exec_segment_t *current = *exec_list; 
+	while(current -> next != NULL){
+		current = current -> next; 
+	}
+	current -> next = segment;
+        exec_list_size++;
+
+	int len = tfp_snprintf(print_buf, PRINT_SZ, "[%d]Successfully created new segment\n", exec_list_size - 1);
+	_write(1, print_buf, len);
+	return segment;	
+}
+
+
+static int
+callback(struct dl_phdr_info *info, size_t size, void *data)
+{
+	char print_buf[PRINT_SZ]; 
+	int j;
+	int len = tfp_snprintf(print_buf, PRINT_SZ, "Name: %s, Executable Segments:\n", info->dlpi_name,
+		info->dlpi_phnum);
+		_write(1, print_buf, len);
+	for (j = 0; j < info->dlpi_phnum; j++){
+		Elf64_Phdr segment = info -> dlpi_phdr[j];
+		if((segment.p_flags & PF_X) && (segment.p_type == PT_LOAD)){
+			void *p_addr = (void *) info -> dlpi_addr + segment.p_vaddr; 
+			len = tfp_snprintf(print_buf, PRINT_SZ, "\t [%d] Address: 0x%lx-0x%lx\n",
+				j, (void *) p_addr, p_addr + segment.p_memsz );
+			_write(1, print_buf, len);
+		       	//add to our list of executable segment
+			exec_segment_t* result = add_segment((uintptr_t) p_addr, segment.p_memsz, info -> dlpi_name, &exec_list_head);
+			if(result == NULL){
+				len = tfp_snprintf(print_buf, PRINT_SZ, "ERROR: Creating Exec Segment Stucture\n");
+				_write(1, print_buf, len);
+			}	
+		}
+	}
+	return 0;
+}
+
+
 
 /*
  * iterates through the map of all memory regions
  * and saves the executable region
  */ 
+
+/*
 
 int save_exec_regions(procmaps_struct* map){
 	procmaps_struct* iter = map;
@@ -142,6 +224,8 @@ int save_exec_regions(procmaps_struct* map){
 	return count;
 }
 
+*/
+
 /*
  * constructor for runtime system that executes before the program
  * creates an initial mapping of the text regions, and marks it read only
@@ -154,51 +238,50 @@ void init(uintptr_t main_addr)
 
 	on = 0;
 
-	len = _snprintf(print_buf, PRINT_SZ, "\n\n******************\n\nRuntime constructor running...\nInitial Memory Mapping:\n");
+	len = tfp_snprintf(print_buf, PRINT_SZ, "\n\n******************\n\nRuntime constructor running...\nInitial Memory Mapping:\n");
 	_write(1, print_buf, len);
 
-	pid_t pid = getpid();
-	procmaps_struct *maps = pmparser_parse(pid); 
-	num_exec_regions = save_exec_regions(maps);
+	//pid_t pid = getpid();
+	//procmaps_struct *maps = pmparser_parse(pid); 
+	//num_exec_regions = save_exec_regions(maps);
 	//mprotect(exec_map, sizeof(procmaps_struct) * num_exec_regions, PROT_READ);
-	for(int i = 0; i < num_exec_regions; i++){
-		len = _snprintf(print_buf, PRINT_SZ, "%d: %s 0x%lx-0x%lx\n", i, exec_map[i].pathname, (uintptr_t) exec_map[i].addr_start, (uintptr_t) exec_map[i].addr_end);
+	
+	/*for(int i = 0; i < num_exec_regions; i++){
+		len = tfp_snprintf(print_buf, PRINT_SZ, "%d: %s 0x%lx-0x%lx\n", i, exec_map[i].pathname, (uintptr_t) exec_map[i].addr_start, (uintptr_t) exec_map[i].addr_end);
 		_write(1, print_buf, len); 
 	}
-       
+	*/
+     
+       	//create executable list structure from dl_phdr	
+       	dl_iterate_phdr(callback, (void *) exec_list_head);	
 
-	len = _snprintf(print_buf, PRINT_SZ, "\n\n******************\n\n");
+	len = tfp_snprintf(print_buf, PRINT_SZ, "\n\n******************\n\n");
+	_write(1, print_buf, len);
 
-
-	len = _snprintf(print_buf, PRINT_SZ, "Marking non-main code NX. Main symbol at address %lx\n", main_addr);
+	len = tfp_snprintf(print_buf, PRINT_SZ, "Marking non-main code NX. Main symbol at address %lx\n", main_addr);
 	_write(1, print_buf, len);
 	remap_code(main_addr, 0);	
 	ctor_done = 1;
 }
-//__attribute__((section(".init_array"))) void (*__init) (int, char**, char**) = &init;
 
 /*
  * destructor which runs after the target program exits 
  * frees the text map 
  */ 
 
-//__attribute__((destructor))
 void fini()
 {
 	_write(1, "Runtime destructor running...\n", 30);
-	if(exec_map != NULL){
+	if(exec_list_head != NULL){
 		//free(exec_map);
 	}
 	remap_code(0, 1); 
 }
 
-
-//__attribute__((section(".fini_array"))) void(*__fini) () = &fini;
-
 /*
  * function which compares path to the list of regions which must 
- * always be executable
- * wrapper.so, vsyscall
+ * 	always be executable such as: 
+ * 	wrapper.so, vsyscall, ld.so
  */ 
 
 int always_exec(char *path){
@@ -216,6 +299,9 @@ int always_exec(char *path){
 	return 0;
 }
 
+/*
+ * implements basic libc strcmp operations
+ */ 
 
 int _strcmp(const char *a, const char *b) {
 	  while (*a && *a == *b)
@@ -231,82 +317,90 @@ int remap_code(uintptr_t fun, int all_exec)
 {
 	int len; 
 	char print_buf[PRINT_SZ]; 
-	len = _snprintf(print_buf, PRINT_SZ, "Remaping code sections. Target text 0x%lx...\n", fun); 
+	len = tfp_snprintf(print_buf, PRINT_SZ, "Remaping code sections. Target text 0x%lx...\n", fun); 
 
-	int i;
-	for(i = 0; i < num_exec_regions; i++)
+	exec_segment_t *segment = exec_list_head;
+	while(segment != NULL)
 	{
-		procmaps_struct* maps = &exec_map[i];
 		int err;
 			      
-		uintptr_t mem_start =  (uintptr_t) maps -> addr_start;  
-		uintptr_t mem_end = (uintptr_t) maps -> addr_end;  
-	
+		uintptr_t mem_start =  segment -> vaddr_start;  
+		uintptr_t mem_end = segment -> vaddr_end;;  
+		size_t mem_size = segment -> size;
+		char *mem_name = segment -> name;
+		int is_exec = *segment -> executable;
+
 		//wrapper code - KEEP EXEC!
-		if(always_exec(maps -> pathname)){
-			if(!all_exec){
-				len = _snprintf(print_buf, PRINT_SZ, "CODE: 0x%lx-0x%lx ALWAYS EXEC\n", mem_start, mem_end); 
-				//_write(1, print_buf, len);
+		if(always_exec(mem_name)){
+			if(!is_exec){
+				len = tfp_snprintf(print_buf, PRINT_SZ, "CODE: 0x%lx-0x%lx ALWAYS EXEC\n", mem_start, mem_end); 
+				_write(1, print_buf, len);
 			}
 		}
 		else if(all_exec){
-			err = _mprotect(maps->addr_start, maps->length, PROT_EXEC | PROT_READ);
+			if(!is_exec){
+				err = _mprotect((void*) mem_start, mem_size, PROT_EXEC | PROT_READ);
+				is_exec = 1;
+
+				len = tfp_snprintf(print_buf,
+					       	PRINT_SZ, 
+						"CODE: 0x%lx-0x%lx Marking all code exec\n",
+					       	mem_start, 
+						mem_end); 
+				_write(1, print_buf, len);
+			}
 		}
 		//called function in memory region -- mark exec 
-		else if(IN_RANGE((uintptr_t) mem_start, (uintptr_t) mem_end, (uintptr_t) fun))
-		{
-		len = _snprintf(print_buf, PRINT_SZ, "%s\n", maps -> pathname); 
-		_write(1, print_buf, len); 
+		else if(IN_RANGE( mem_start,  mem_end, fun)){
+			len = tfp_snprintf(print_buf, PRINT_SZ, "%s\n", segment -> name); 
+			_write(1, print_buf, len); 
 			//check if already marked EXEC
-			if(maps -> is_x)
-			{
-				len = _snprintf(print_buf,
+			if(*(segment -> executable)){
+				len = tfp_snprintf(print_buf,
 					       	PRINT_SZ, 
 						"CODE: 0x%lx-0x%lx ALREADY marked EXEC, contains TARGET\n",
 					       	mem_start, 
 						mem_end); 
 				_write(1, print_buf, len);
 			}
-			else
-			{
-
-				len = _snprintf(print_buf, 
+			else{
+				len = tfp_snprintf(print_buf, 
 						PRINT_SZ, 
 						"CODE: 0x%lx-0x%lx marked NX, contains TARGET, marking it EXEC...\n", 
 						mem_start, 
 						mem_end); 
 				_write(1, print_buf, len);
-				err = _mprotect(maps->addr_start, maps->length, PROT_EXEC | PROT_READ);
-				maps -> is_x = 1; 
+				err = _mprotect((void*) mem_start, mem_size, PROT_EXEC | PROT_READ);
+				is_exec = 1; 
 				if(err)
 				{
-					len = _snprintf(print_buf, PRINT_SZ, "ERROR: mprotect PROT_READ | PROT_EXEC\n");
+					len = tfp_snprintf(print_buf, PRINT_SZ, "ERROR: mprotect PROT_READ | PROT_EXEC\n");
 				       _write(1, print_buf, len);	
 				}
 			}
 		}
 		//check if memory region is executable -- mark read only
 		else {
+			len = tfp_snprintf(print_buf, PRINT_SZ, "%s\n", mem_name); 
+			_write(1, print_buf, len); 
 
-		len = _snprintf(print_buf, PRINT_SZ, "%s\n", maps -> pathname); 
-		_write(1, print_buf, len); 
 			//mark previously executable region as read only
-			
-		 	if(maps -> is_x){
-				len = _snprintf(print_buf, PRINT_SZ, "CODE: 0x%lx-0x%lx marked EXEC, marking it NX\n", mem_start, mem_end);
+		 	if(*(segment -> executable)){
+				len = tfp_snprintf(print_buf, PRINT_SZ, "CODE: 0x%lx-0x%lx marked EXEC, marking it NX\n", mem_start, mem_end);
 				 _write(1, print_buf, len);
-				err = _mprotect(maps -> addr_start, maps -> length, PROT_READ);
-				maps -> is_x = 0;
+				err = _mprotect((void*) mem_start, mem_size, PROT_READ);
+				is_exec = 0;
 				if(err){
-					len = _snprintf(print_buf, PRINT_SZ, "ERROR: mprotect PROT_READ\n");
+					len = tfp_snprintf(print_buf, PRINT_SZ, "ERROR: mprotect PROT_READ\n");
 					_write(1, print_buf, len);	
 				}
 			}
 			else{
-				len = _snprintf(print_buf, PRINT_SZ, "CODE: 0x%lx-0x%lx marked NX\n", mem_start, mem_end);
+				len = tfp_snprintf(print_buf, PRINT_SZ, "CODE: 0x%lx-0x%lx marked NX\n", mem_start, mem_end);
 				 _write(1, print_buf, len);
 			}
 		}
+		segment = segment -> next;
 	}
 	return 0; 
 }
@@ -321,7 +415,7 @@ main_t main_addr = NULL;
 
 int _dti_error(){
 	_write(1, "ERROR: Resolving Symbol. Exiting Process...\n", 7);
-	exit(1);
+	return -1;
 }
 
 /*
@@ -331,25 +425,25 @@ int _dti_error(){
 
 int dti_main(int argc, const char* argv[], char *envp[]){
 	char print_buf[PRINT_SZ];
-	int len = _snprintf(print_buf, PRINT_SZ, "Call to main sucessfully redirected\n");
+	int len = tfp_snprintf(print_buf, PRINT_SZ, "Call to main sucessfully redirected\n");
 	_write(1, print_buf, len);
 
-	len = _snprintf(print_buf, PRINT_SZ, "Calling runtime constructor...\n");
+	len = tfp_snprintf(print_buf, PRINT_SZ, "Calling runtime constructor...\n");
 	_write(1, print_buf, len);
 	init((uintptr_t) main_addr);
 
-	len = _snprintf(print_buf, PRINT_SZ, "Calling main at address: %lx...\n", main_addr);
+	len = tfp_snprintf(print_buf, PRINT_SZ, "Calling main at address: %lx...\n", main_addr);
 	_write(1, print_buf, len);
 
 	on = 1;	
 	int result = (*main_addr)(argc, argv, envp);
 	on = 0;
 
-	len = _snprintf(print_buf, PRINT_SZ, "Return from main with value: %d\n", result);
+	len = tfp_snprintf(print_buf, PRINT_SZ, "Return from main with value: %d\n", result);
 	_write(1, print_buf, len);
 	fini();
 
-	len = _snprintf(print_buf, PRINT_SZ, "Calling runtime destructor...\n");
+	len = tfp_snprintf(print_buf, PRINT_SZ, "Calling runtime destructor...\n");
 	_write(1, print_buf, len);
 
 	return result;
@@ -374,11 +468,11 @@ void *find_dyn_addr(const char* symbol, uintptr_t *return_addr, uintptr_t *rdi)
 		was_on = 1; 
 	}
 	else if(!_strcmp("__libc_start_main", symbol)){
-		int len = _snprintf(print_buf, PRINT_SZ, "Call to libc main initialization function\n");
+		int len = tfp_snprintf(print_buf, PRINT_SZ, "Call to libc main initialization function\n");
 		_write(1, print_buf, len);
 		void *f = dlsym(RTLD_NEXT, symbol);
 		main_addr = (main_t) (*rdi); 
-		len = _snprintf(print_buf, PRINT_SZ, "Main at: 0x%lx, Redirecting main to: 0x%lx, Stack Location 0x%lx\n", *rdi, (uintptr_t) &dti_main, rdi);
+		len = tfp_snprintf(print_buf, PRINT_SZ, "Main at: 0x%lx, Redirecting main to: 0x%lx, Stack Location 0x%lx\n", *rdi, (uintptr_t) &dti_main, rdi);
 		_write(1, print_buf, len);
 		*rdi = (uintptr_t) &dti_main;
 		return f; 
@@ -386,19 +480,19 @@ void *find_dyn_addr(const char* symbol, uintptr_t *return_addr, uintptr_t *rdi)
 	}
        	
 	if(was_on){
-		int len = _snprintf(print_buf, PRINT_SZ, "Symbol: %s\n", symbol);
+		int len = tfp_snprintf(print_buf, PRINT_SZ, "Symbol: %s\n", symbol);
 		_write(1, print_buf, len);
 	}
 
 	remap_code(0, 1); //DL_SYM only works on executable binaries -- POTENTIAL AVENUE OF ATTACK
 	void *f = dlsym(RTLD_NEXT, symbol);
-	int len = _snprintf(print_buf, PRINT_SZ, "Dynamic Symbol Address: 0x%lx\n", (uintptr_t) f);
-	//_write(1, print_buf, len);
+	int len = tfp_snprintf(print_buf, PRINT_SZ, "Dynamic Symbol %s, Address: 0x%lx\n", symbol, (uintptr_t) f);
+	_write(1, print_buf, len);
 	const char *err = dlerror();
 	if(err != NULL)
 	{
-		int len = _snprintf(print_buf, PRINT_SZ, "ERROR: DLOPEN\n\t%s\n", err);  
-		_write(STDERR_FILENO, print_buf, len); 
+		int len = tfp_snprintf(print_buf, PRINT_SZ, "ERROR: DLOPEN\n\t%s\n", err);  
+		_write(1, print_buf, len); 
 		return &_dti_error; 	
 	}
 	else
@@ -422,10 +516,10 @@ int runtime_return(uintptr_t *return_addr){
        	if(on){
 		on = 0;
 		char print_buf[PRINT_SZ];
-		int len = _snprintf(print_buf, PRINT_SZ, "Returning to address: 0x%lx...\n", *return_addr);
+		int len = tfp_snprintf(print_buf, PRINT_SZ, "Returning to address: 0x%lx...\n", *return_addr);
 		_write(1, print_buf, len);
 		remap_code(*return_addr, 0);
-		len = _snprintf(print_buf, PRINT_SZ, "Returning...\n\n");
+		len = tfp_snprintf(print_buf, PRINT_SZ, "Returning...\n\n");
 		_write(1, print_buf, len);
 		on = 1;
 	}
