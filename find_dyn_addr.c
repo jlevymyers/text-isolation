@@ -180,50 +180,6 @@ callback(struct dl_phdr_info *info, size_t size, void *data)
 	return 0;
 }
 
-
-
-/*
- * iterates through the map of all memory regions
- * and saves the executable region
- */ 
-
-/*
-
-int save_exec_regions(procmaps_struct* map){
-	procmaps_struct* iter = map;
-       	int count = 0;
-	while(iter != NULL){
-		if(iter -> is_x){
-			count++;
-		}
-		iter = iter -> next; 
-	}
-	exec_map = (procmaps_struct*) _mmap(NULL, count*sizeof(procmaps_struct), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	if(exec_map == NULL){
-		return -1; 
-	}
-	int i = 0;
-	iter = map; 	
-	while(iter != NULL){
-		if(iter -> is_x){
-			exec_map[i].addr_start = iter -> addr_start;
-			exec_map[i].addr_end = iter -> addr_end;
-			exec_map[i].length = iter -> length;
-			exec_map[i].is_r = iter -> is_r;
-			exec_map[i].is_w = iter -> is_w;
-			exec_map[i].is_x = iter -> is_x;
-			exec_map[i].is_p = iter -> is_p;
-			for(int j = 0; j <600; j++){
-				exec_map[i].pathname[j] = iter -> pathname[j]; 
-			}
-			//memcpy(&exec_map[i], iter, sizeof(procmaps_struct));
-			i++; 
-		}
-		iter = iter -> next; 
-	}
-	return count;
-}
-
 */
 
 /*
