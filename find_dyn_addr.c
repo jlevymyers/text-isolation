@@ -180,8 +180,6 @@ callback(struct dl_phdr_info *info, size_t size, void *data)
 	return 0;
 }
 
-*/
-
 /*
  * constructor for runtime system that executes before the program
  * creates an initial mapping of the text regions, and marks it read only
