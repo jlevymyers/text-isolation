@@ -9,8 +9,11 @@ CSTD	=-std=gnu99
 
 CFLAGS	= -z noexecstack -Wl,--export-dynamic -O0 $(CDEBUG) $(CSTD) -ldl -fPIC
 
+
 STATIC	= 
 #-static-libgcc -static-libstdc++ 
+
+SOURCE ?= open_test
 
 TARGET ?= hello.txt
 
@@ -40,16 +43,16 @@ wrap: dyn_wrapper.s find_dyn_addr.o pmparser.o
 	$(CC) $(CDEBUG) -shared -o wrapper.so dyn_wrapper.s find_dyn_addr.o pmparser.o $(CFLAGS) $(STATIC) -nostdlib	
 
 run: test wrap
-	LD_PRELOAD=$(PWD)/wrapper.so /gpfs/main/home/jlevymye/course/cs2951/text-isolation/open_test $(TARGET) 
+	LD_PRELOAD=$(PWD)/wrapper.so /gpfs/main/home/jlevymye/course/cs2951/text-isolation/$(SOURCE) $(TARGET) 
 
 gdb: test wrap
-	gdb /gpfs/main/home/jlevymye/course/cs2951/text-isolation/open_test 
+	gdb /gpfs/main/home/jlevymye/course/cs2951/text-isolation/$(SOURCE)
 
 pmparser.o: $(PWD)/proc_maps_parser/pmparser.c
 	$(CC) $(CDEBUG) -c $(PWD)/proc_maps_parser/pmparser.c $(CFLAGS)
 
 trace: test wrap
-	LD_DEBUG=all LD_PRELOAD=$(PWD)/wrapper.so strace /gpfs/main/home/jlevymye/course/cs2951/text-isolation/open_test $(TARGET)
+	LD_DEBUG=all LD_PRELOAD=$(PWD)/wrapper.so strace /gpfs/main/home/jlevymye/course/cs2951/text-isolation/$(SOURCE) $(TARGET)
 
 all: inst test
 

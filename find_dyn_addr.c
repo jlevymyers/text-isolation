@@ -52,6 +52,11 @@ const char * ALWAYS_EXEC[5] =  {"/gpfs/main/home/jlevymye/course/cs2951/text-iso
 
 #define PRINT_SZ 1024 
 
+/* 
+ * system call wrappers functions 
+ * needed to avoid using external libraries
+ */ 
+
 int _write(int fd, const void *buf, size_t count){
 
 	register int result asm("rax") = __NR_write;
@@ -234,7 +239,6 @@ int remap_code(uintptr_t fun, int all_exec)
 		procmaps_struct* maps = &exec_map[i];
 		int err;
 			      
-		//TODO restore original memory mapping
 		uintptr_t mem_start =  (uintptr_t) maps -> addr_start;  
 		uintptr_t mem_end = (uintptr_t) maps -> addr_end;  
 	
@@ -311,10 +315,19 @@ typedef int (*main_t)(int, const char**, char**);
 
 main_t main_addr = NULL;
 
-int error(){
+/*
+ * function whose address is returned when an error is found resolving a symbol
+ */
+
+int _dti_error(){
 	_write(1, "ERROR: Resolving Symbol. Exiting Process...\n", 7);
 	exit(1);
 }
+
+/*
+ * is passed as an argument to _libc_start_main. starts the runtime protection
+ * and calls the main function. turn off runtime protection when main terminates
+ */ 
 
 int dti_main(int argc, const char* argv[], char *envp[]){
 	char print_buf[PRINT_SZ];
@@ -380,13 +393,13 @@ void *find_dyn_addr(const char* symbol, uintptr_t *return_addr, uintptr_t *rdi)
 	remap_code(0, 1); //DL_SYM only works on executable binaries -- POTENTIAL AVENUE OF ATTACK
 	void *f = dlsym(RTLD_NEXT, symbol);
 	int len = _snprintf(print_buf, PRINT_SZ, "Dynamic Symbol Address: 0x%lx\n", (uintptr_t) f);
-	_write(1, print_buf, len);
+	//_write(1, print_buf, len);
 	const char *err = dlerror();
 	if(err != NULL)
 	{
 		int len = _snprintf(print_buf, PRINT_SZ, "ERROR: DLOPEN\n\t%s\n", err);  
 		_write(STDERR_FILENO, print_buf, len); 
-		return &error; 	
+		return &_dti_error; 	
 	}
 	else
 	{
@@ -400,6 +413,10 @@ void *find_dyn_addr(const char* symbol, uintptr_t *return_addr, uintptr_t *rdi)
 		return f; 
 	}
 }
+
+/*
+ * called on return from dynamic call. restored return address section to EXEC
+ */ 
 
 int runtime_return(uintptr_t *return_addr){
        	if(on){

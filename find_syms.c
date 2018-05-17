@@ -118,6 +118,9 @@ main(int argc, char* argv[])
 			}
 		}
 		//find main function
+
+		/*
+
 		if(section.sh_type==SHT_SYMTAB){
 			printf("[%u] Symbol Table: %s\n", i, section_strtab + section.sh_name);
 			
@@ -142,7 +145,11 @@ main(int argc, char* argv[])
 					symboler++;
 			}	
 		}
+
+		*/
 	}
+
+	/*
 
 	if(main_off == 0){
 		printf("ERROR: Main function could not be found\n");
@@ -167,6 +174,8 @@ main(int argc, char* argv[])
 			text_size = section.sh_size;
 			text_off = section.sh_offset;
 		}
+
+
 		if(!strncmp(".dti", section_name, 5)){
 			printf("[%u] Instrumented Section: %s\n", i, section_strtab + section.sh_name);
 			printf("\tSection Offset: 0x%lx, Section Size: 0x%lx\n", section.sh_offset, section.sh_size); 
@@ -176,14 +185,16 @@ main(int argc, char* argv[])
 			dti_addr = &shdr[i].sh_addr;
 			dti_off = &shdr[i].sh_offset;
 		}
+
+		
 	}
-
-
+	*/
 
 	/*
 	 *Extend Program Header 
 	 */
 
+	/*
 	Elf64_Half phnum = header -> e_phnum;
 	Elf64_Phdr* phdr_iter =(Elf64_Phdr*) (header_base + header -> e_phoff);
 	
@@ -205,11 +216,17 @@ main(int argc, char* argv[])
 			phdr_iter++;	
 		}
 	}
+	*/
+
+
+	
 
 	/*
 	 * Update References to Main 
 	 *     Example: 6fdi: 48 8d e8 0c 01 00 00 lea 0x10c(%rip), %rdi
 	 */
+	
+	/*
 
 	for(i = 0; i < text_size; i++){
 		if(memcmp(text + i, "\x8b", 2)){
@@ -231,6 +248,8 @@ main(int argc, char* argv[])
 			}
 		}
 	}
+
+	*/
 
 	//clean up
 	munmap(header, size);
