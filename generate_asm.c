@@ -12,10 +12,12 @@ size_t start_asm_file(char *target, uintptr_t base_addr)
 	asm_counter = 0;
 
 	size_t len = sprintf(target, "#include \"find_dyn_addr.h\"\n"); 
-	len += sprintf(target + len, ".globl __base_addr\n");
+	
+	/*len += sprintf(target + len, ".globl __base_addr\n");
 	len += sprintf(target + len, "__base_addr:\n");
 	len += sprintf(target + len, "\t .quad 0x%lx \n", base_addr);
-	
+	*/
+
 	//mark stack non-exec
 	//len += sprintf(target + len, ".section .note.GNU-stack, \"\", %%progbits\n");
 	return len; 
@@ -26,7 +28,7 @@ size_t start_asm_file(char *target, uintptr_t base_addr)
  *
  */ 
 
-size_t generate_asm(const char *symbol, char *target)
+size_t generate_asm(const char *symbol, char *target, int uid)
 {
 
 	if(symbol == NULL){
@@ -75,7 +77,7 @@ size_t generate_asm(const char *symbol, char *target)
 	//offset += sprintf(target + offset, "\t movq %%rax, %%rsi\n");
 
 	//call hook 
-	offset += sprintf(target + offset, "\tleaq .name%x(%%rip), %%rdi\n", asm_counter);
+	offset += sprintf(target + offset, "\tleaq .name%d(%%rip), %%rdi\n", uid);
 	offset += sprintf(target + offset, "\tmovq %%r8, %%rsi\n");
 	offset += sprintf(target + offset, "\tcallq find_dyn_addr@PLT\n");
 
@@ -126,9 +128,9 @@ size_t generate_asm(const char *symbol, char *target)
 	offset += sprintf(target + offset, "\tretq\n");
 
 	//symbol string 
-	offset += sprintf(target + offset, ".name%x:\n", asm_counter); 
+	offset += sprintf(target + offset, ".name%d:\n", uid); 
 	offset += sprintf(target + offset, "\t.asciz\t \"%s\"\n", symbol);
-	offset += sprintf(target + offset, "\t.size\t.name%x, %lu\n", asm_counter, len);
+	offset += sprintf(target + offset, "\t.size\t.name%d, %lu\n", uid, len);
 	asm_counter++; 	
 	return offset; 
 }

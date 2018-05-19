@@ -41,8 +41,13 @@ run: test wrap
 gdb: test wrap
 	gdb /gpfs/main/home/jlevymye/course/cs2951/text-isolation/$(SOURCE)
 
-trace: test wrap
-	LD_DEBUG=all LD_PRELOAD=$(PWD)/wrapper.so strace /gpfs/main/home/jlevymye/course/cs2951/text-isolation/$(SOURCE) $(TARGET)
+ld_debug: test wrap
+	LD_DEBUG=all LD_PRELOAD=$(PWD)/wrapper.so /gpfs/main/home/jlevymye/course/cs2951/text-isolation/$(SOURCE) $(TARGET)
+
+time_dti: test wrap
+	time /gpfs/main/home/jlevymye/course/cs2951/text-isolation/$(SOURCE) $(TARGET) LD_PRELOAD=$(PWD)/wrapper.so > out1
+	time /gpfs/main/home/jlevymye/course/cs2951/text-isolation/$(SOURCE) $(TARGET) > out2
+
 
 all: inst test
 

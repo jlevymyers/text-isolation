@@ -49,7 +49,6 @@ const char * ALWAYS_EXEC[5] =  {"/gpfs/main/home/jlevymye/course/cs2951/text-iso
  */ 
 
 int _write(int fd, const void *buf, size_t count){
-
 	register int result asm("rax") = __NR_write;
 	register int _fd asm("rdi") = fd; 
 	register const void *_buf asm("rsi") = buf;
@@ -60,6 +59,7 @@ int _write(int fd, const void *buf, size_t count){
 			: "r" (result), "r" (_fd), "r" (_buf), "r" (_count)
 			: "memory");
 	return result; 
+	return 0; 
 }
 
 int _mprotect(void *addr, size_t len, int prot){
@@ -96,7 +96,7 @@ void* _mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off){
  * https://github.com/GaloisInc/minlibc/blob/master/strncpy.c
  */
 
-char  *strncpy(char *dest, const char *src, size_t count)
+char  *_strncpy(char *dest, const char *src, size_t count)
 {
 	char *tmp = dest;
 	while (count-- && (*dest++ = *src++) != '\0')
@@ -127,7 +127,7 @@ exec_segment_t *add_segment(uintptr_t vaddr_start, size_t size, const char *name
 	segment -> vaddr_end = vaddr_start + size; 
 	segment -> size = size; 
 	segment -> next = NULL;
-	strncpy(segment -> name, name, DTI_NAME_SZ);
+	_strncpy(segment -> name, name, DTI_NAME_SZ);
 	//give the executable segment a pointer to its (sometimes) modifiable execuatable bit
 	segment -> executable = executable_array + exec_list_size;	
 
@@ -229,7 +229,7 @@ void fini()
 	if(exec_list_head != NULL){
 		//free(exec_map);
 	}
-	remap_code(0, 1); 
+	remap_code("finished", 1); 
 }
 
 /*
@@ -438,7 +438,7 @@ void *find_dyn_addr(const char* symbol, uintptr_t *return_addr, uintptr_t *rdi)
 		_write(1, print_buf, len);
 	}
 
-	remap_code(0, 1); //DL_SYM only works on executable binaries -- POTENTIAL AVENUE OF ATTACK
+	remap_code(0, 1); //DL_SYM only works on executable binaries -- LOOK INTO ISSUE
 	void *f = dlsym(RTLD_NEXT, symbol);
 	int len = tfp_snprintf(print_buf, PRINT_SZ, "Dynamic Symbol %s, Address: 0x%lx\n", symbol, (uintptr_t) f);
 	_write(1, print_buf, len);

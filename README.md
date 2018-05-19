@@ -2,22 +2,21 @@
 Project which prevents execution across dynamic code sections. 
 
 # Making Project
-make inst  
-
-make test 
+make inst # generates instrumentation file 
+make test # generates open\_test, a working example
 
 # Making Wrapper Project 
-./instrument [target]
+./instrument [target] # this will output instrumentation code in a file called dyn\_sym.s
 
-make wrap
+make wrap # compiles wrapper into a dynamic object (.so) 
 
 # Running Linker with Hooks
-make run
+make run SOURCE=main\_executable # run the program with the LD\_PRELOAD flag set
 
 # Structure of Project
 
 ### Static Hook Generation 
-1. find\_syms() identifies all dynamic symbols in binary 
+1. find\_syms() identifies all dynamic symbols in binary and dependencies 
 2. generate\_asm() generates hook file
  
 ### Runtime 
